@@ -27,6 +27,7 @@ import plotly.graph_objects as go
 from phase1_data_pipeline import CLASS_NAMES, IMG_SIZE, get_device
 from phase2_model_architecture import build_model
 from phase5_gradcam import GradCAM, denormalize_image, overlay_heatmap
+from phase7_gatekeeper import load_gatekeeper, is_brain_mri
 
 # ──────────────────────────────────────────────
 # CONFIGURATION
@@ -410,8 +411,16 @@ st.markdown('<h1 class="main-title">NEURO<span style="color:#c8d6e5">SCAN</span>
 st.markdown('<p class="main-subtitle">AI-Powered Brain Tumor Detection System</p>', unsafe_allow_html=True)
 st.markdown("")
 
-# Load model on startup
+# Load models on startup
 model, grad_cam, device = load_model()
+
+@st.cache_resource
+def load_gatekeeper_model():
+    """Load the MRI gatekeeper model once."""
+    d = get_device()
+    return load_gatekeeper(d), d
+
+gatekeeper_model, gatekeeper_device = load_gatekeeper_model()
 
 col_left, col_center, col_right = st.columns([1, 2, 1])
 
@@ -434,6 +443,15 @@ with col_center:
 # ──────────────────────────────────────────────
 if uploaded_file is not None:
     image = Image.open(uploaded_file).convert("RGB")
+
+    # ── Gatekeeper: reject non-MRI uploads ───────
+    mri_valid, mri_confidence = is_brain_mri(image, gatekeeper_model, gatekeeper_device)
+    if not mri_valid:
+        st.error(
+            "The uploaded image does not appear to be a valid Brain MRI scan. "
+            "Please upload a valid scan."
+        )
+        st.stop()
 
     col_img, col_results = st.columns([1, 1], gap="large")
 
